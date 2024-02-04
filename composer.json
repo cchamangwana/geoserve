@@ -17,7 +17,9 @@
         "laravel/sanctum": "^2.6",
         "laravel/tinker": "^2.5",
         "maatwebsite/excel": "^3.1",
-        "tightenco/ziggy": "^1.0"
+        "tightenco/ziggy": "^1.0",
+        "pavel-mironchik/laravel-backup-panel": "^2.1.0",
+        "spatie/laravel-backup": "^7"
     },
     "require-dev": {
         "facade/ignition": "^2.5",
