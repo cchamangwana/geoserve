@@ -41,9 +41,10 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request)
     {
         return array_merge(parent::share($request), [
-            'publicPath'=> function() use ($request){
-                return env("APP_URL");
-            },
+            'publicPath'=> env("APP_URL"),
+            // 'publicPath'=> function() use ($request){
+            //     return env("APP_URL");
+            // },
             'auth'=> function() use ($request){
                 if (Auth::check())
                     return new UserResource(Auth::user());
