@@ -40,7 +40,7 @@ class RequestFormController extends Controller
 
         //get reports for the year
         $year=date('Y');
-        $reports=Report::where('year',$year)->get();
+        $reports = Report::withCount(['requestForms' => function ($query) use ($user) { $query->where('user_id', $user->id); }])->where('year', $year)->get();
 
         $dashboardReports=[
             'data'=>[]
@@ -51,17 +51,17 @@ class RequestFormController extends Controller
 //            $active=RequestForm::orderBy('dateRequested','desc')->where('approvalStatus','<',4)->get();
             $active=[];
         }else
-            $active = RequestForm::where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();*/
-        $active = RequestForm::where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-        $activeCount=$active->count();
+            $active = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->paginate(15); // Single assignment with paginate
+        // Removed duplicated line above by commenting out the original and ensuring the new one is correct.
+        $activeCount=$active->total(); // Ensure this uses total()
 
         $awaitingInitiationCount=0;
         $awaitingReconciliationCount=0;
 
         //Contracts Manager
         if($user->hasRole('management') && $user->hasRole('employee')) {
-            $toApproveAsManager=RequestForm::where('approvalStatus',0)->where('stagesApprovalStatus',1)->where('user_id','!=',$user->id)->orderBy('dateRequested','desc')->get();
-            $toApproveAsEmployee=RequestForm::where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
+            $toApproveAsManager=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',0)->where('stagesApprovalStatus',1)->where('user_id','!=',$user->id)->orderBy('dateRequested','desc')->get();
+            $toApproveAsEmployee=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
             $toApprove = $toApproveAsManager->merge($toApproveAsEmployee);
 
             $awaitingApprovalCount=$toApprove->count();
@@ -70,16 +70,16 @@ class RequestFormController extends Controller
         }
         //Normal Manager
         else if($user->hasRole('management')){
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalStatus',1)->where('user_id','!=',$user->id)->orderBy('dateRequested','desc')->get();
+            $toApprove=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',0)->where('stagesApprovalStatus',1)->where('user_id','!=',$user->id)->orderBy('dateRequested','desc')->get();
             $awaitingApprovalCount=$toApprove->count();
 
             $dashboardReports=ReportResource::collection($reports);
 
         } elseif($user->hasRole('accountant')){
 
-            $toReconcile=RequestForm::where('approvalStatus',3)->orderBy('dateRequested','desc')->get();
-            $toInitiate=RequestForm::where('approvalStatus',1)->orderBy('dateRequested','desc')->get();
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
+            $toReconcile=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',3)->orderBy('dateRequested','desc')->get();
+            $toInitiate=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',1)->orderBy('dateRequested','desc')->get();
+            $toApprove=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
 
             $awaitingApprovalCount=$toApprove->count();
             $awaitingInitiationCount=$toInitiate->count();
@@ -94,14 +94,14 @@ class RequestFormController extends Controller
                     'id'              =>  $report->id,
                     'year'            =>  $report->year,
                     'month'           =>  $report->month,
-                    'requestsCount'   =>  $report->requestForms()->where('user_id',$user->id)->count(),
+                    'requestsCount'   =>  $report->request_forms_count,
                 ];
             }
 
             if ((new AppController())->isApi($request))
                 $dashboardReports=$dashboardReports['data'];
         }else{
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
+            $toApprove=RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
             $awaitingApprovalCount=$toApprove->count();
 
             foreach ($reports as $report){
@@ -109,14 +109,14 @@ class RequestFormController extends Controller
                     'id'              =>  $report->id,
                     'year'            =>  $report->year,
                     'month'           =>  $report->month,
-                    'requestsCount'   =>  $report->requestForms()->where('user_id',$user->id)->count(),
+                    'requestsCount'   =>  $report->request_forms_count,
                 ];
             }
             if ((new AppController())->isApi($request))
                 $dashboardReports=$dashboardReports['data'];
         }
 
-        $totalCount=$toApprove->count()+$active->count();
+        $totalCount=$toApprove->count()+$active->total(); // Changed to total()
 
 
         $unverifiedUsers=(new AppController())->getRoleUsers('unverified');
@@ -185,8 +185,8 @@ class RequestFormController extends Controller
             $closedRequestsCount=RequestForm::where('approval_by_id',$user->id)->where('approvalStatus','>',3)->count();
 
             //Requests section
-            $activeRequests=RequestForm::where('approval_by_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-            $closedRequests=RequestForm::where('approval_by_id',$user->id)->where('approvalStatus','>',3)->orderBy('dateRequested','desc')->paginate((new AppController())->paginate);
+            $activeRequests = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approval_by_id', $user->id)->where('approvalStatus', '<', 4)->orderBy('dateRequested', 'desc')->get();
+            $closedRequests = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approval_by_id', $user->id)->where('approvalStatus', '>', 3)->orderBy('dateRequested', 'desc')->paginate((new AppController())->paginate);
 
         }else{
             $totalRequests=$user->approvedRequests->count();
@@ -204,8 +204,8 @@ class RequestFormController extends Controller
             $closedRequestsCount=$user->approvedRequests()->where('approvalStatus','>',3)->count();
 
             //Requests section
-            $activeRequests=$user->approvedRequests()->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-            $closedRequests=$user->approvedRequests()->where('approvalStatus','>',3)->orderBy('dateRequested','desc')->paginate((new AppController())->paginate);
+            $activeRequests = $user->approvedRequests()->with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
+            $closedRequests = $user->approvedRequests()->with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus','>',3)->orderBy('dateRequested','desc')->paginate((new AppController())->paginate);
         }
         $response=[
             'totalRequests'                     => $totalRequests,
@@ -244,9 +244,9 @@ class RequestFormController extends Controller
         $vehicleMaintenanceRequestsCount=RequestForm::where('approvalStatus','>',0)->where('approvalStatus','<',4)->where('approvalStatus','!=',2)->where('type','VEHICLE_MAINTENANCE')->count();
         $fuelRequestsCount=RequestForm::where('approvalStatus','>',0)->where('approvalStatus','<',4)->where('approvalStatus','!=',2)->where('type','FUEL')->count();
 
-        $awaitingInitiation=RequestForm::where('approvalStatus',1)->get();
-        $awaitingReconciliation=RequestForm::where('approvalStatus',3)->get();
-        $reconciled=RequestForm::where('approvalStatus',4)->paginate((new AppController())->paginate);
+        $awaitingInitiation = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 1)->get();
+        $awaitingReconciliation = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 3)->get();
+        $reconciled = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 4)->paginate((new AppController())->paginate);
 
         $awaitingInitiationCount=$awaitingInitiation->count();
         $awaitingReconciliationCount=$awaitingReconciliation->count();
@@ -287,13 +287,13 @@ class RequestFormController extends Controller
         $toReconcile=[];
 
         if($user->hasRole('management')){
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalStatus',1)->where('user_id','!=',$user->id)->orderBy('dateRequested','desc')->get();
+            $toApprove = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 0)->where('stagesApprovalStatus', 1)->where('user_id', '!=', $user->id)->orderBy('dateRequested', 'desc')->get();
         } elseif($user->hasRole('accountant')){
-            $toReconcile=RequestForm::where('approvalStatus',3)->orderBy('dateRequested','desc')->get();
-            $toInitiate=RequestForm::where('approvalStatus',1)->orderBy('dateRequested','desc')->get();
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
+            $toReconcile = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 3)->orderBy('dateRequested', 'desc')->get();
+            $toInitiate = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 1)->orderBy('dateRequested', 'desc')->get();
+            $toApprove = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 0)->where('stagesApprovalPosition', $user->position->id)->where('stagesApprovalStatus', 0)->orderBy('dateRequested', 'desc')->get();
         }else{
-            $toApprove=RequestForm::where('approvalStatus',0)->where('stagesApprovalPosition',$user->position->id)->where('stagesApprovalStatus',0)->orderBy('dateRequested','desc')->get();
+            $toApprove = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', 0)->where('stagesApprovalPosition', $user->position->id)->where('stagesApprovalStatus', 0)->orderBy('dateRequested', 'desc')->get();
         }
 
         return response()->json([
@@ -312,7 +312,7 @@ class RequestFormController extends Controller
         if($user->hasRole('management') || $user->hasRole('administrator')){
             //Should they get only those approved by management or every single request form?
 
-            $totalRequests=RequestForm::all()->count();
+            $totalRequests=RequestForm::count();
 
             //For Pie Chart
             $cashRequestsCount=RequestForm::where('type','CASH')->count();
@@ -327,8 +327,8 @@ class RequestFormController extends Controller
             $closedRequestsCount=RequestForm::where('approvalStatus','>',3)->count();
 
             //Requests section
-            $activeRequests=RequestForm::where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-            $closedRequests=RequestForm::where('approvalStatus','>',3)->orderBy('dateRequested','desc')->paginate((new AppController())->paginate);
+            $activeRequests = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', '<', 4)->orderBy('dateRequested', 'desc')->get();
+            $closedRequests = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', '>', 3)->orderBy('dateRequested', 'desc')->paginate((new AppController())->paginate);
         }else {
             $totalRequests=$user->requestForms->count();
 
@@ -345,8 +345,8 @@ class RequestFormController extends Controller
             $closedRequestsCount=$user->requestForms()->where('approvalStatus','>',3)->count();
 
             //Requests section
-            $activeRequests=$user->requestForms()->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-            $closedRequests=$user->requestForms()->where('approvalStatus','>',3)->orderBy('dateRequested','desc')->paginate((new AppController())->paginate);
+            $activeRequests = $user->requestForms()->with(['project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', '<', 4)->orderBy('dateRequested', 'desc')->get();
+            $closedRequests = $user->requestForms()->with(['project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('approvalStatus', '>', 3)->orderBy('dateRequested', 'desc')->paginate((new AppController())->paginate);
         }
 
         $response=[
@@ -602,7 +602,7 @@ class RequestFormController extends Controller
     public function approve(Request $request, int $id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
@@ -771,7 +771,7 @@ class RequestFormController extends Controller
     public function deny(Request $request, int $id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
@@ -888,7 +888,7 @@ class RequestFormController extends Controller
     public function show(Request $request, $id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
             if ((new AppController())->isApi($request)) {
@@ -913,7 +913,7 @@ class RequestFormController extends Controller
 
     public function edit(Request $request,$id)
     {
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
             //get user
@@ -953,7 +953,7 @@ class RequestFormController extends Controller
     public function update(Request $request, $id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
@@ -1111,7 +1111,7 @@ class RequestFormController extends Controller
     public function destroy(Request $request,$id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 /*
@@ -1148,7 +1148,7 @@ class RequestFormController extends Controller
     public function appendRemarks(Request $request,$id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
@@ -1225,7 +1225,7 @@ class RequestFormController extends Controller
     public function discard(Request $request,$id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
@@ -1271,7 +1271,7 @@ class RequestFormController extends Controller
 
     public function initiate(Request $request,$id)
     {
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
             //check if the request form can be initiated
@@ -1344,7 +1344,7 @@ class RequestFormController extends Controller
 
     public function reconcile(Request $request,$id)
     {
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
             //check if the request form can be initiated
@@ -1436,7 +1436,7 @@ class RequestFormController extends Controller
 
     public function findRequestForm(Request $request,$code){
         //find out if the request is valid
-        $requestForm=RequestForm::where('code',$code)->first();
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->where('code',$code)->first();
 
         if(is_object($requestForm)){
             if ((new AppController())->isApi($request)) {
@@ -1462,7 +1462,7 @@ class RequestFormController extends Controller
     public function print(Request $request,$id)
     {
         //find out if the request is valid
-        $requestForm=RequestForm::find($id);
+        $requestForm = RequestForm::with(['user', 'user.position', 'project', 'vehicle', 'approvedBy', 'deniedBy', 'approvalBy', 'stages'])->find($id);
 
         if(is_object($requestForm)){
 
