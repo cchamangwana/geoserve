@@ -23,12 +23,12 @@ class AppController extends Controller
 
             if ($requestToken) {
                 $token = PersonalAccessToken::findToken($requestToken);
-                return $token->tokenable;
+                return User::with(['position', 'roles'])->find($token->tokenable_id);
             }else
                 return null;
         }
         else{
-            return User::find(Auth::id());
+            return User::with(['position', 'roles'])->find(Auth::id());
         }
 
     }

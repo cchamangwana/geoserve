@@ -9,6 +9,7 @@ use App\Actions\Fortify\UpdateUserProfileInformation;
 use App\Http\Controllers\PositionController;
 use App\Http\Resources\PositionResource;
 use App\Models\Position;
+use Illuminate\Support\Facades\Cache; // Add this import
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -52,12 +53,14 @@ class FortifyServiceProvider extends ServiceProvider
 
 
 
-        Fortify::registerView(function (){
-            $positions= Position::orderBy('title','asc')->get();
+        Fortify::registerView(function () {
+            $positions = Cache::remember('fortify.registration.positions', now()->addMinutes(60), function () {
+                return Position::orderBy('title', 'asc')->get();
+            });
 
             return Inertia::render('Auth/Register', [
                 'status' => session('status'),
-                'positions'=> PositionResource::collection($positions),
+                'positions' => PositionResource::collection($positions),
             ]);
         });
     }
