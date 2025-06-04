@@ -51,9 +51,9 @@ class RequestFormController extends Controller
 //            $active=RequestForm::orderBy('dateRequested','desc')->where('approvalStatus','<',4)->get();
             $active=[];
         }else
-            $active = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();*/
-        $active = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->get();
-        $activeCount=$active->count();
+            $active = RequestForm::with(['user', 'project', 'vehicle', 'deniedBy', 'approvalBy', 'user.position'])->where('user_id',$user->id)->where('approvalStatus','<',4)->orderBy('dateRequested','desc')->paginate(15); // Single assignment with paginate
+        // Removed duplicated line above by commenting out the original and ensuring the new one is correct.
+        $activeCount=$active->total(); // Ensure this uses total()
 
         $awaitingInitiationCount=0;
         $awaitingReconciliationCount=0;
@@ -116,7 +116,7 @@ class RequestFormController extends Controller
                 $dashboardReports=$dashboardReports['data'];
         }
 
-        $totalCount=$toApprove->count()+$active->count();
+        $totalCount=$toApprove->count()+$active->total(); // Changed to total()
 
 
         $unverifiedUsers=(new AppController())->getRoleUsers('unverified');
